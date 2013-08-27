@@ -1,4 +1,5 @@
 require 'json'
+require 'net/https'
 
 module Databasedotcom
   module Chatter
@@ -21,14 +22,8 @@ module Databasedotcom
         path_components << id_prefix
         path_components << "feed-items"
         path = "/" + path_components.compact.join('/')
-        result = client.http_get(path)
-        response = JSON.parse(result.body)
-        collection = self.new(client, nil, response["nextPageUrl"], response["previousPageUrl"], response["currentPageUrl"])
-        response["items"].each do |item|
-          collection << FeedItem.new(client, item)
-        end
-        collection
-      end
+        collection_from_feed(client, path, false)
+      end      
 
       # Posts a FeedItem to a Feed specified by _user_id_. Should not be called as a class method on Feed, but as a method on subclasses.
       #
@@ -52,11 +47,28 @@ module Databasedotcom
         Databasedotcom::Chatter::FeedItem.new(client, response.body)
       end
 
-      private
-
       def self.feed_type
         self.name.match(/.+::(.+)Feed$/)[1].resourcerize
       end
+
+      # Instantiates and returns a collection based on the client and URL provided
+      def self.collection_from_feed(client, url, no_escape)
+        url = no_escape ? URI.unescape(url) : url
+        result = client.http_get(url)
+        response = JSON.parse(result.body)
+        collection = self.new(client, nil, response["nextPageUrl"], response["previousPageUrl"], response["currentPageUrl"])
+        response["items"].each do |item|
+          collection << FeedItem.new(@client, item)
+        end
+        collection
+      end
+
+      # Instance methods
+      def next_page
+        if self.next_page?
+          self.class.collection_from_feed(@client, @next_page_url, true)
+        end
+      end    
     end
 
     FEED_TYPES = %w(News UserProfile Record To People Groups Files Company)
